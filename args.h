@@ -37,6 +37,9 @@ typedef struct {
     int time_interval; 
     char *file; /* -f parameter, specifies the file that the results will be stored. */
     int udp_packet_size_in_bytes; /* -l parameter, specifies UDP packet size in bytes. */
+
+    /* NOTE: maybe this should be long...? */
+    /* If so parser needed... */
     int bandwidth_in_bits_per_sec; /* -b parameter, specifies bandwidth in bps of the data stream that the client should send to the server. */
     int parallel_num; /* -n parameter, specifies the number of parallel data streams that the client should create. */
 
@@ -46,7 +49,8 @@ typedef struct {
     If none specified, the program will continue until termination by the user occurs.
     */
     int time_to_send_in_seconds;
-    
+    int has_time_parameter; /* Specifies that there is a time parameter. */
+
     /*
     -d parameter, 
     If 1, measure one way delay, 
@@ -54,6 +58,32 @@ typedef struct {
     */
     int one_way_delay_flag;
     int delay_before_starting_in_seconds; /* -w parameter, wait duration in seconds before starting experiment. */
+
 } configuration_flags_t;
 
+/* 
+Function for parsing the command line and initializing everything inside the configuration struct. 
+returns 0 on successful parsing, 
+returns 1 otherwise. 
+*/
+int argument_parser(int argc, char *argv[], configuration_flags_t *cft);
+
+/*
+Function for turning the given string s to an integer. 
+Helper function for the parsing of the command line.
+*/
+int char_to_int(const char *s, int *value);
+
+/* Function for explaining the tool the way a man page would do it. */
+void explain_usage();
+
+/* Helper function for printing the configuration struct. */
+void print_configuration(configuration_flags_t *cft);
+
+/* 
+Function for checking whether the configuration struct is solid and logically correct. 
+returns 1 on successful logical configuration. 
+returns -1 otherwise. 
+*/
+int check_configuration(configuration_flags_t *cft);
 #endif
