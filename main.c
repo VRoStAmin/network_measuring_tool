@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "args.h"
+#include "server.h"
+#include "client.h"
 
 int main(int argc, char *argv[]) {
     configuration_flags_t cft;
@@ -13,10 +15,11 @@ int main(int argc, char *argv[]) {
     print_configuration(&cft);
 
     if(cft.is_server_flag) {
-        printf("server mode selected...\n");
+        return run_server(&cft);
     } else if(cft.is_client_flag) {
-        printf("client mode selected...\n");
+        return run_client(&cft);
     }
 
+    explain_usage();
     return 0;
 }
