@@ -192,3 +192,51 @@ void print_configuration(configuration_flags_t *cft) {
     printf("Output file name: %s\n", cft->file);
     printf("__________________________________________________________________\n");
 }
+
+void explain_usage() {
+    printf("This program is a network measurement tool working in client/server mode.\n");
+    printf("The server waits for connections and the client connects to start an experiment.\n");
+    printf("\n");
+
+    printf("How to run it:\n");
+    printf("Server mode:\n");
+    printf("./netmeasure -s -p <port> [-a <bind_ip>] [-i <interval>] [-f <file>]\n");
+    printf("\n");
+
+    printf("How to run it:\n");
+    printf("Server mode:\n");
+    printf("./netmeasure -s -p <port> [-a <bind_ip>] [-i <interval>] [-f <file>]\n");
+    printf("\n");
+
+    printf("Client mode for throughput / jitter / packet loss:\n");
+    printf("./netmeasure -c -a <server_ip> -p <port> -l <packet_size> -b <bandwidth> -n <streams>\n");
+    printf("[-t <duration>] [-w <wait>] [-i <interval>] [-f <file>]\n");
+    printf("\n");
+
+    printf("Client mode for one-way delay:\n");
+    printf("./netmeasure -c -d -a <server_ip> -p <port> -n <streams>\n");
+    printf("[-t <duration>] [-w <wait>] [-i <interval>] [-f <file>]\n");
+    printf("\n")
+
+    printf("Meaning of parameters:\n");
+    printf("-s : run the program as server\n");
+    printf("-c : run the program as client\n");
+    printf("-a : in server mode, local IP to bind to\n");
+    printf("     in client mode, IP address of the server to connect to\n");
+    printf("-p : TCP port number\n");
+    printf("-i : how often to print progress information in seconds\n");
+    printf("-f : file where results will be stored\n");
+    printf("-l : UDP packet size in bytes\n");
+    printf("-b : bandwidth in bits per second\n");
+    printf("-n : number of parallel streams\n");
+    printf("-t : duration of the experiment in seconds\n");
+    printf("     if not given, the client keeps running until stopped by the user\n");
+    printf("-d : measure one-way delay instead of throughput/jitter/packet loss\n");
+    printf("-w : waiting time before starting transmission\n");
+    printf("\n");
+
+    printf("Examples:\n");
+    printf("./netmeasure -s -p 5000\n");
+    printf("./netmeasure -c -a 127.0.0.1 -p 5000 -l 1000 -b 1000000 -n 1 -t 10\n");
+    printf("./netmeasure -c -d -a 127.0.0.1 -p 5000 -n 1 -t 5\n");
+}
