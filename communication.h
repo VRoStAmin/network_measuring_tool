@@ -49,4 +49,20 @@ typedef struct {
     double avg_jitter_ns;
 } exp_exited_msg_t;
 
+/* Packets with header and message. That will be sent by tcp for signaling. */
+typedef struct {
+    tcp_header_t header;
+    start_msg_t message;
+} start_packet_t;
+
+typedef struct {
+    tcp_header_t header;
+    start_msg_t message;
+} stop_packet_t;
+
+typedef struct {
+    tcp_header_t header;
+    exp_exited_msg_t message;
+} exp_exited_packet_t;
+
 #endif
