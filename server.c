@@ -23,14 +23,14 @@ int run_server(configuration_flags_t *cft) {
     /* We are going to use socket() to create the socket descriptor for the server listening. */
     server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if(server_sock < 0) {
-        printf("Creating socket error\n");
+        printf("Creating server socket error\n");
         return -1;
     }
 
-    server_addr.family = AF_INET; /* Matching the family of the server address to the one of the sockets. */
-    server_addr.port = htons(cft->port);
+    server_addr.sin_family = AF_INET; /* Matching the family of the server address to the one of the sockets. */
+    server_addr.sin_port = htons(cft->port);
     if(cft->address == NULL) {
-        server_addr.in_addr.s_addr = htonl(INADDR_ANY);
+        server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     } else {
         if(inet_pton(AF_INET, cft->address, &server_addr.sin_addr) <= 0) {
             printf("Server address error\n");

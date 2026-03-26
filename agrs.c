@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
 #include "args.h"
 
 int char_to_int(const char *s, int *value) {
@@ -189,7 +190,9 @@ void print_configuration(configuration_flags_t *cft) {
 
     printf("Port: %d\n", cft->port);
     printf("Time interval (seconds): %d\n", cft->time_interval);
-    printf("Output file name: %s\n", cft->file);
+    if(cft->file) {
+        printf("Output file name: %s\n", cft->file);
+    }
     printf("__________________________________________________________________\n");
 }
 
@@ -216,7 +219,7 @@ void explain_usage() {
     printf("Client mode for one-way delay:\n");
     printf("./netmeasure -c -d -a <server_ip> -p <port> -n <streams>\n");
     printf("[-t <duration>] [-w <wait>] [-i <interval>] [-f <file>]\n");
-    printf("\n")
+    printf("\n");
 
     printf("Meaning of parameters:\n");
     printf("-s : run the program as server\n");
