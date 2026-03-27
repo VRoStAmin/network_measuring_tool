@@ -25,7 +25,7 @@ int run_client(configuration_flags_t *cft) {
     server_addr.sin_port = htons(cft->port);
 
     if(inet_pton(AF_INET, cft->address, &server_addr.sin_addr) <= 0) {
-        printf("Server address error\n");
+        printf("Server address error [TCP PART]\n");
         close(client_sock);
         return -1;
     }
