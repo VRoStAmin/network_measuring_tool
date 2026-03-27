@@ -47,6 +47,8 @@ typedef struct {
     double goodput_bps;
     double loss_percent;
     double avg_jitter_ns;
+    double std_jitter;
+    double one_way_delay;
 } exp_exited_msg_t;
 
 /* Packets with header and message. That will be sent by tcp for signaling. */
@@ -57,7 +59,7 @@ typedef struct {
 
 typedef struct {
     tcp_header_t header;
-    start_msg_t message;
+    stop_msg_t message;
 } stop_packet_t;
 
 typedef struct {

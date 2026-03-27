@@ -7,10 +7,13 @@
 #include <arpa/inet.h>
 
 #include "client.h"
+#include "communication.h"
+#include "tcp.h"
 
 int run_client(configuration_flags_t *cft) {
     int client_sock;
     struct sockaddr_in server_addr;
+    exp_exited_msg_t results;
     memset(&server_addr, 0, sizeof(server_addr));
     
     client_sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -33,8 +36,43 @@ int run_client(configuration_flags_t *cft) {
         return -1;
     }
 
-    printf("Connect to server %s:%d\n", cft->address, cft->port);
+    printf("Connected to server %s:%d\n", cft->address, cft->port);
+    if(send_start_message(client_sock, cft) != 0) {
+        printf("Send START message error\n");
+        close(client_sock);
+        return -1;
+    }
+    printf("START message sent\n");
+
+    if(send_stop_message(client_sock, 1212) != 0) {
+        printf("Send STOP message error\n");
+        close(client_sock);
+        return -1;
+    }
+    printf("STOP message sent\n");
     
+    if(recv_exp_exited_message(client_sock, &results) != 0) {
+        printf("Receive EXP_EXITED message error\n");
+        close(client_sock);
+        return -1;
+    }
+
+    /* Make flag for one way delay results... */
+    /* We probably need to write these in json files... */
+    /* Or make a program to plot them... */
+    printf("\n");
+    printf("RESULTS RECEIVED\n");
+    printf("Throughput in bps: %ld\n", results.throughput_bps);
+    printf("Goodput in bps: %ld\n", results.goodput_bps);
+    printf("Loss percent: %ld\n", results.loss_percent);
+    printf("Avg_jitter: %ld\n", results.avg_jitter_ns);
+    printf("Std_jitter: %ld\n", results.std_jitter);
+    printf("\n");
+
+    printf("____________________________________________________________________\n");
+    printf("EVERYTHING SUCCESSFUL ON CLIENT SIDE.\n");
+    printf("____________________________________________________________________\n");
+
     close(client_sock);
     return 0;
 }
