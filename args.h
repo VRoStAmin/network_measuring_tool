@@ -38,7 +38,7 @@ typedef struct {
     char *file; /* -f parameter, specifies the file that the results will be stored. */
     int udp_packet_size_in_bytes; /* -l parameter, specifies UDP packet size in bytes. */
 
-    /* NOTE: maybe this should be long...? */
+    /* NOTE: maybe this should be long...? -> atol*/
     /* If so parser needed... */
     int bandwidth_in_bits_per_sec; /* -b parameter, specifies bandwidth in bps of the data stream that the client should send to the server. */
     int parallel_num; /* -n parameter, specifies the number of parallel data streams that the client should create. */

@@ -206,11 +206,6 @@ void explain_usage() {
     printf("./netmeasure -s -p <port> [-a <bind_ip>] [-i <interval>] [-f <file>]\n");
     printf("\n");
 
-    printf("How to run it:\n");
-    printf("Server mode:\n");
-    printf("./netmeasure -s -p <port> [-a <bind_ip>] [-i <interval>] [-f <file>]\n");
-    printf("\n");
-
     printf("Client mode for throughput / jitter / packet loss:\n");
     printf("./netmeasure -c -a <server_ip> -p <port> -l <packet_size> -b <bandwidth> -n <streams>\n");
     printf("[-t <duration>] [-w <wait>] [-i <interval>] [-f <file>]\n");
