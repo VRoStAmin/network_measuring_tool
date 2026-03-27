@@ -70,7 +70,7 @@ int run_server(configuration_flags_t *cft) {
 
     printf("Client connected\n");
 
-    if(recv_start_message() != 0) {
+    if(recv_start_message(client_sock, &start_msg) != 0) {
         printf("Receive START message error\n");
         close(client_sock);
         close(server_sock);

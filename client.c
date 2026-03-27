@@ -62,11 +62,11 @@ int run_client(configuration_flags_t *cft) {
     /* Or make a program to plot them... */
     printf("\n");
     printf("RESULTS RECEIVED\n");
-    printf("Throughput in bps: %ld\n", results.throughput_bps);
-    printf("Goodput in bps: %ld\n", results.goodput_bps);
-    printf("Loss percent: %ld\n", results.loss_percent);
-    printf("Avg_jitter: %ld\n", results.avg_jitter_ns);
-    printf("Std_jitter: %ld\n", results.std_jitter);
+    printf("Throughput in bps: %f\n", results.throughput_bps);
+    printf("Goodput in bps: %f\n", results.goodput_bps);
+    printf("Loss percent: %f\n", results.loss_percent);
+    printf("Avg_jitter: %f\n", results.avg_jitter_ns);
+    printf("Std_jitter: %f\n", results.std_jitter);
     printf("\n");
 
     printf("____________________________________________________________________\n");
