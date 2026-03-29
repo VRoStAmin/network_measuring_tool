@@ -5,44 +5,70 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <time.h>
 
 #include "udp.h"
 
+uint64_t nanosec_now() {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1000000000 + t.tv_nsec;
+}
+
 int udp_send_test(char *server_ip, int port, int packet_size, int duration_sec) {
-    int sock;
-    char buffer[1024];
+    int client_sock;
+    char *buffer;
     struct sockaddr_in server_address;
+    uint64_t seq_num;
+
     /*Create UDP socket*/
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) {
+    client_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (client_sock < 0) {
         printf("socket creation failed\n");
         return -1;
     }
 
     memset(&server_address, 0, sizeof(server_address));
-    server_address.sin_family = AF_NET;
+    server_address.sin_family = AF_INET;
     server_address.sin_port = htons(port);
     
-    if(inet_pton(AF_INET, server_ip, &server_address.sin_addr)<=0){
+    if(inet_pton(AF_INET, server_ip, &server_address.sin_addr) <= 0){
         printf("Server address error [UDP PART]\n ");
-        close(sockfd);
+        close(client_sock);
         return -1;
     } 
-    
-    /* I dont think we need bind here since we are not receiving back from the server. Check this. */
-    if(bind(sockfd, (const struct sockaddr *)&server_address, sizeof(server_address)) < 0){
-        printf("bind failed\n");
-        close(sockfd);
+
+    seq_num = 0;
+    buffer = malloc(packet_size * sizeof(char));
+    if(buffer == NULL) {
+        printf("Malloc failure\n");
+        close(client_sock);
         return -1;
     }
 
-    socklen_t len = sizeof(server_address);
+    uint64_t time_now_ns = nanosec_now();
+    uint64_t time_end_ns = time_now_ns + duration_sec * 1000000000;
+    while(nanosec_now() < time_end_ns) {
+        udp_header_t header;
+        header.sequence_number = seq_num;
+        header.time_sent_ns = nanosec_now();
 
-    sendto(sockfd, buffer, strlen(buffer), MSG_CONFIRM, (const struct sockaddr*)&server_address, len);
-    printf("UDP message  sent\n");
-
-    close(sockfd);
+        memcpy(buffer, &header, sizeof(header));
+        ssize_t bytes_sent = sendto(client_sock, buffer, packet_size, 0, (struct sockaddr *)&server_address, sizeof(server_address));
+        if(bytes_sent < 0) {
+            printf("Error in send to\n");
+            close(client_sock);
+            free(buffer);
+            return -1; 
+        }
+        printf("Sent UDP packet with sequence number: %llu\n", seq_num);
+        seq_num++;
+    }
+    printf("UDP send test finished, total packets sent: %llu\n", seq_num);
     
+    close(client_sock);
+    free(buffer);
+    return 0;
 }
 
 int udp_recv_test(char *bind_ip, int port) {
@@ -70,7 +96,7 @@ int udp_recv_test(char *bind_ip, int port) {
     if(bind_ip == NULL) {
         server_address.sin_addr.s_addr = htonl(INADDR_ANY);
     } else {
-        if(inet_pton(AF_INET, server_ip, &server_address.sin_addr) <= 0) {
+        if(inet_pton(AF_INET, bind_ip, &server_address.sin_addr) <= 0) {
             printf("Server address error\n");
             close(server_sock);
             return -1;
@@ -83,6 +109,8 @@ int udp_recv_test(char *bind_ip, int port) {
         return -1;    
     }
 
+    total_bytes = 0;
+    total_packets = 0;
     printf("Server listening on port %d\n", port);
     while(1) {
         ssize_t bytes_recv = recvfrom(server_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&client_address, &client_addr_len);
@@ -91,13 +119,20 @@ int udp_recv_test(char *bind_ip, int port) {
             close(server_sock);
             return -1;
         }
+        
+        printf("Received another package\n");
+        if(bytes_recv >= sizeof(udp_header_t)) {
+            udp_header_t header;
+            memcpy(&header, buffer, sizeof(header));
+            printf("Received packet seq=%llu\n", header.sequence_number);
+        }
 
         total_packets++;
         total_bytes += (uint64_t)bytes_recv;
-        printf("Received another package\n");
         printf("Total packets received so far: %llu\n", total_packets);
         printf("Total bytes received so far: %llu\n", total_bytes);
     }
+    
     close(server_sock);
     return 0;
 }
