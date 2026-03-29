@@ -28,7 +28,8 @@ int udp_send_test(char *server_ip, int port, int packet_size, int duration_sec) 
         close(sockfd);
         return -1;
     } 
-
+    
+    /* I dont think we need bind here since we are not receiving back from the server. Check this. */
     if(bind(sockfd, (const struct sockaddr *)&server_address, sizeof(server_address)) < 0){
         printf("bind failed\n");
         close(sockfd);
@@ -48,7 +49,11 @@ int udp_recv_test(char *bind_ip, int port) {
     int server_sock;
     struct sockaddr_in client_address;
     struct sockaddr_in server_address;
+    socklen_t client_addr_len = sizeof(client_address);
     char buffer[1024];
+
+    uint64_t total_packets; 
+    uint64_t total_bytes;
     
     server_sock = socket(AF_INET, SOCK_DGRAM, 0);
     if(server_sock < 0) {
@@ -72,14 +77,27 @@ int udp_recv_test(char *bind_ip, int port) {
         }
     }
     
-    if(bind(server_sock, (const struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
+    if(bind(server_sock, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
         printf("Bind error\n");
         close(server_sock);
         return -1;    
     }
 
-    printf("Server listenin" on port %d\n), port
+    printf("Server listening on port %d\n", port);
+    while(1) {
+        ssize_t bytes_recv = recvfrom(server_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&client_address, &client_addr_len);
+        if(bytes_recv < 0) {
+            printf("Error in receive\n");
+            close(server_sock);
+            return -1;
+        }
 
-    ;
-    
+        total_packets++;
+        total_bytes += (uint64_t)bytes_recv;
+        printf("Received another package\n");
+        printf("Total packets received so far: %llu\n", total_packets);
+        printf("Total bytes received so far: %llu\n", total_bytes);
+    }
+    close(server_sock);
+    return 0;
 }
