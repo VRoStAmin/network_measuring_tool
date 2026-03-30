@@ -9,17 +9,24 @@
 
 #include "udp.h"
 
+#define UDP_HEADER_SIZE 8
+#define IP_HEADER_SIZE 20
+#define ETHERNET_HEADER_SIZE 14
+
+#define OVERHEAD_SIZE (UDP_HEADER_SIZE + IP_HEADER_SIZE + ETHERNET_HEADER_SIZE)
+
 uint64_t nanosec_now() {
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return t.tv_sec * 1000000000 + t.tv_nsec;
 }
 
-int udp_send_test(char *server_ip, int port, int packet_size, int duration_sec) {
+int udp_send_test(char *server_ip, int port, uint32_t packet_size, int duration_sec) {
     int client_sock;
     char *buffer;
     struct sockaddr_in server_address;
     uint64_t seq_num;
+    
 
     /*Create UDP socket*/
     client_sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -37,24 +44,28 @@ int udp_send_test(char *server_ip, int port, int packet_size, int duration_sec) 
         close(client_sock);
         return -1;
     } 
+    size_t full_packet_size = packet_size + sizeof(udp_pseudo_header_t);
 
     seq_num = 0;
-    buffer = malloc(packet_size * sizeof(char));
+    buffer = malloc(full_packet_size * sizeof(char));
     if(buffer == NULL) {
         printf("Malloc failure\n");
         close(client_sock);
         return -1;
     }
 
+    memset(buffer, 0, full_packet_size);
+    
     uint64_t time_now_ns = nanosec_now();
     uint64_t time_end_ns = time_now_ns + duration_sec * 1000000000;
+    
     while(nanosec_now() < time_end_ns) {
-        udp_header_t header;
+        udp_pseudo_header_t header;
         header.sequence_number = seq_num;
         header.time_sent_ns = nanosec_now();
 
         memcpy(buffer, &header, sizeof(header));
-        ssize_t bytes_sent = sendto(client_sock, buffer, packet_size, 0, (struct sockaddr *)&server_address, sizeof(server_address));
+        ssize_t bytes_sent = sendto(client_sock, buffer, full_packet_size, 0, (struct sockaddr *)&server_address, sizeof(server_address));
         if(bytes_sent < 0) {
             printf("Error in send to\n");
             close(client_sock);
@@ -71,15 +82,17 @@ int udp_send_test(char *server_ip, int port, int packet_size, int duration_sec) 
     return 0;
 }
 
-int udp_recv_test(char *bind_ip, int port) {
+int udp_recv_test(char *bind_ip, int port, uint32_t packet_size, int duration_sec) {
     int server_sock;
     struct sockaddr_in client_address;
     struct sockaddr_in server_address;
     socklen_t client_addr_len = sizeof(client_address);
-    char buffer[1024];
+    char *buffer;
 
     uint64_t total_packets; 
     uint64_t total_bytes;
+    
+    exp_results_t results;
     
     server_sock = socket(AF_INET, SOCK_DGRAM, 0);
     if(server_sock < 0) {
@@ -111,28 +124,62 @@ int udp_recv_test(char *bind_ip, int port) {
 
     total_bytes = 0;
     total_packets = 0;
+    size_t full_packet_size = packet_size + sizeof(udp_pseudo_header_t);
+
+    buffer = malloc((packet_size + 1024 ) * sizeof(char));
+    if (buffer == NULL) {
+        printf("Malloc failure\n");
+        close(server_sock);
+        return -1;
+    }
+    memset(buffer, 0, (packet_size + 1024) * sizeof(char));
+    
+    uint64_t time_now_ns = nanosec_now();
+    uint64_t time_end_ns = time_now_ns + duration_sec * 1000000000;
     printf("Server listening on port %d\n", port);
-    while(1) {
-        ssize_t bytes_recv = recvfrom(server_sock, buffer, sizeof(buffer), 0, (struct sockaddr *)&client_address, &client_addr_len);
+    while(nanosec_now() < time_end_ns) {
+        ssize_t bytes_recv = recvfrom(server_sock, buffer, full_packet_size, 0, (struct sockaddr *)&client_address, &client_addr_len);
         if(bytes_recv < 0) {
             printf("Error in receive\n");
             close(server_sock);
+            free(buffer);
             return -1;
         }
         
         printf("Received another package\n");
-        if(bytes_recv >= sizeof(udp_header_t)) {
-            udp_header_t header;
+        if(bytes_recv >= sizeof(udp_pseudo_header_t)) {
+            udp_pseudo_header_t header;
             memcpy(&header, buffer, sizeof(header));
+            total_packets++;
+            total_bytes += (uint64_t)bytes_recv;
             printf("Received packet seq=%llu\n", header.sequence_number);
+        } else {
+            printf("Received packet too small: %zu bytes\n", bytes_recv);
         }
-
-        total_packets++;
-        total_bytes += (uint64_t)bytes_recv;
-        printf("Total packets received so far: %llu\n", total_packets);
-        printf("Total bytes received so far: %llu\n", total_bytes);
     }
     
+    results.throughput = calculate_throughput(total_bytes, duration_sec, total_packets);
+    results.goodput = calculate_goodput(total_bytes, duration_sec, total_packets);
+    
+    printf("Packets received: %llu\n", total_packets);
+    printf("Bytes received: %llu\n", total_bytes);
+    printf("Throughput: %.3f bps\n", results.throughput);
+    printf("Goodput: %.3f bps\n", results.goodput);
+    
     close(server_sock);
+    free(buffer);
     return 0;
+}
+
+/*calculate throughput*/
+double calculate_throughput(uint64_t total_bytes, double duration_sec, uint64_t total_packets){
+    double true_total_bytes = total_bytes - (total_packets * sizeof(udp_pseudo_header_t));
+    double throughput_bps = (8.0 * (true_total_bytes + (total_packets * OVERHEAD_SIZE))) / duration_sec;
+    return throughput_bps;
+}
+
+double calculate_goodput(uint64_t total_bytes, double duration_sec, uint64_t total_packets){
+    double true_total_bytes = total_bytes - (total_packets * sizeof(udp_pseudo_header_t));
+    double goodput_bps = (8.0 * true_total_bytes) / duration_sec;
+    return goodput_bps;
 }
