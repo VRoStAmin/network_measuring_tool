@@ -1,6 +1,8 @@
 #ifndef ARGS_H
 #define ARGS_H
 
+#include <stdint.h>
+
 /* This h file will hold all information that will be passed around all other files. */
 
 /* 
@@ -40,7 +42,7 @@ typedef struct {
 
     /* NOTE: maybe this should be long...? -> atol*/
     /* If so parser needed... */
-    int bandwidth_in_bits_per_sec; /* -b parameter, specifies bandwidth in bps of the data stream that the client should send to the server. */
+    uint64_t bandwidth_in_bits_per_sec; /* -b parameter, specifies bandwidth in bps of the data stream that the client should send to the server. */
     int parallel_num; /* -n parameter, specifies the number of parallel data streams that the client should create. */
 
     /*
@@ -73,6 +75,9 @@ Function for turning the given string s to an integer.
 Helper function for the parsing of the command line.
 */
 int char_to_int(const char *s, int *value);
+
+int char_to_uint64(const char *s, uint64_t *value);
+
 
 /* Function for explaining the tool the way a man page would do it. */
 void explain_usage();

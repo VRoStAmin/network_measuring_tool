@@ -18,6 +18,20 @@ int char_to_int(const char *s, int *value) {
     return 0;
 }
 
+int char_to_uint64(const char *s, uint64_t *value) {
+    char *endptr;
+    unsigned long long x;
+
+    if (s == NULL || *s == '\0') return -1;
+
+    x = strtoull(s, &endptr, 10);
+
+    if (*endptr != '\0') return -1;
+
+    *value = (uint64_t)x;
+    return 0;
+}
+
 int check_configuration(configuration_flags_t *cft) {
     if(cft->is_server_flag == cft->is_client_flag) {
         printf("Choose -s or -c, not both, not none.\n");
@@ -116,7 +130,7 @@ int argument_parser(int argc, char *argv[], configuration_flags_t *cft) {
                 }
                 break;
             case 'b':
-                if(char_to_int(optarg, &cft->bandwidth_in_bits_per_sec) != 0) {
+                if(char_to_uint64(optarg, &cft->bandwidth_in_bits_per_sec) != 0) {
                     printf("Invalid -b option\n");
                     return -1;
                 }

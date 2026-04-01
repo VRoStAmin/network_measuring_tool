@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <stdint.h>
 
 #include "server.h"
 #include "communication.h"
@@ -137,9 +138,6 @@ int run_server(configuration_flags_t *cft) {
     printf("Packet size: %d\n", cft->udp_packet_size_in_bytes);
     printf("Duration: %d sec\n", duration);
 
-    return udp_recv_test(cft->address,
-                         cft->port,
-                         (uint32_t)cft->udp_packet_size_in_bytes,
-                         duration);
+    return udp_server_experiment(cft->address, cft->port, (uint32_t)cft->udp_packet_size_in_bytes, duration);
 }
 
