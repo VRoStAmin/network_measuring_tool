@@ -21,7 +21,7 @@ uint64_t nanosec_now() {
     return (uint64_t)t.tv_sec * 1000000000ULL + (uint64_t)t.tv_nsec;
 }
 
-int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int duration_sec, uint64_t bandwidth_bps) {
+int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int duration_sec, uint64_t bandwidth_bps, int one_way_delay_flag) {
     int client_sock;
     char *buffer;
     struct sockaddr_in server_address;
@@ -43,61 +43,113 @@ int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int d
         close(client_sock);
         return -1;
     } 
-    uint64_t full_packet_size = packet_size + sizeof(udp_pseudo_header_t);
-    uint64_t overhead_packet_size = full_packet_size + OVERHEAD_SIZE;
 
-    seq_num = 0;
-    buffer = malloc(full_packet_size * sizeof(char));
-    if(buffer == NULL) {
-        printf("Malloc failure\n");
-        close(client_sock);
-        return -1;
-    }
+    if(one_way_delay_flag) {
+        udp_pseudo_header_t send_pack;
+        udp_pseudo_header_t received_pack;
+        seq_num = 0;
 
-    memset(buffer, 0, full_packet_size);
-    
-    uint64_t time_now_ns = nanosec_now();
-    uint64_t time_end_ns = time_now_ns + (uint64_t)duration_sec * 1000000000ULL;
-    double delay_sec = (overhead_packet_size * 8ULL) / (double)bandwidth_bps;
-    uint64_t delay_ns = delay_sec * 1000000000ULL;
-    //maybe we need to check if the delay_ns is zero due to really small overhead_packet_size
-    uint64_t next_send_time = time_now_ns;
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 500000;
+        setsockopt(client_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    while(nanosec_now() < time_end_ns) {
-        uint64_t now = nanosec_now();
-        if(now > time_end_ns) {
-            break;
-        }
-
-        while(nanosec_now() < next_send_time) {
-            continue;
-        }
-
-        udp_pseudo_header_t header;
-        header.sequence_number = seq_num;
-        header.time_sent_ns = nanosec_now();
+        uint64_t start_ns = nanosec_now();
+        uint64_t end_ns = start_ns + (uint64_t)duration_sec * 1000000000ULL;
+        printf("UDP delay mode client started for %d seconds\n", duration_sec);
         
+        double sum_delay_ns = 0;
+        uint64_t packets_received = 0;
+        while(nanosec_now() < end_ns) {
+            send_pack.sequence_number = seq_num;
+            send_pack.time_sent_ns = nanosec_now();
+            ssize_t bytes_sent = sendto(client_sock, &send_pack, sizeof(send_pack), 0, (struct sockaddr *)&server_address, sizeof(server_address));
+            if(bytes_sent < 0) {
+                printf("Error in send to\n");
+                close(client_sock);
+                return -1; 
+            } 
 
-        memcpy(buffer, &header, sizeof(header));
-        ssize_t bytes_sent = sendto(client_sock, buffer, full_packet_size, 0, (struct sockaddr *)&server_address, sizeof(server_address));
-        if(bytes_sent < 0) {
-            printf("Error in send to\n");
-            close(client_sock);
-            free(buffer);
-            return -1; 
+            ssize_t bytes_recv = recvfrom(client_sock, &received_pack, sizeof(received_pack), 0, NULL, NULL);
+            if(bytes_recv < 0) {
+                seq_num++;
+                continue;
+            }
+
+            uint64_t recv_time_ns = nanosec_now();
+            uint64_t rtt_ns = recv_time_ns - received_pack.time_sent_ns;
+            double one_way_delay_ns = rtt_ns/2.0;
+            sum_delay_ns += one_way_delay_ns;
+            packets_received++;
+            seq_num++;
+        }   
+
+        if(packets_received > 0) {
+            double avg_delay_ns = sum_delay_ns / (double)packets_received;
+            printf("Average one way delay: %.3f ns\n", avg_delay_ns);
+        } else {
+            printf("No packets received to compute one way delay.\n");
         }
-        printf("Sent UDP packet with sequence number: %llu\n", seq_num);
-        seq_num++;
-        next_send_time += delay_ns;
+        close(client_sock);
+        return 0;
+    } else {
+        uint64_t full_packet_size = packet_size + sizeof(udp_pseudo_header_t);
+        uint64_t overhead_packet_size = full_packet_size + OVERHEAD_SIZE;
+
+        seq_num = 0;
+        buffer = malloc(full_packet_size * sizeof(char));
+        if(buffer == NULL) {
+            printf("Malloc failure\n");
+            close(client_sock);
+            return -1;
+        }
+
+        memset(buffer, 0, full_packet_size);
+        
+        uint64_t time_now_ns = nanosec_now();
+        uint64_t time_end_ns = time_now_ns + (uint64_t)duration_sec * 1000000000ULL;
+        double delay_sec = (overhead_packet_size * 8ULL) / (double)bandwidth_bps;
+        uint64_t delay_ns = delay_sec * 1000000000ULL;
+        //maybe we need to check if the delay_ns is zero due to really small overhead_packet_size
+        uint64_t next_send_time = time_now_ns;
+
+        while(nanosec_now() < time_end_ns) {
+            uint64_t now = nanosec_now();
+            if(now > time_end_ns) {
+                break;
+            }
+
+            while(nanosec_now() < next_send_time) {
+                continue;
+            }
+
+            udp_pseudo_header_t header;
+            header.sequence_number = seq_num;
+            header.time_sent_ns = nanosec_now();
+            
+
+            memcpy(buffer, &header, sizeof(header));
+            ssize_t bytes_sent = sendto(client_sock, buffer, full_packet_size, 0, (struct sockaddr *)&server_address, sizeof(server_address));
+            if(bytes_sent < 0) {
+                printf("Error in send to\n");
+                close(client_sock);
+                free(buffer);
+                return -1; 
+            }
+            printf("Sent UDP packet with sequence number: %llu\n", seq_num);
+            seq_num++;
+            next_send_time += delay_ns;
+        }
+        printf("UDP send test finished, total packets sent: %llu\n", seq_num);
+        
+        close(client_sock);
+        free(buffer);
+        return 0;
     }
-    printf("UDP send test finished, total packets sent: %llu\n", seq_num);
-    
-    close(client_sock);
-    free(buffer);
     return 0;
 }
 
-int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int duration_sec) {
+int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one_way_delay_flag, int duration_sec) {
     int server_sock;
     struct sockaddr_in client_address;
     struct sockaddr_in server_address;
@@ -107,8 +159,19 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int dur
     uint64_t total_packets; 
     uint64_t total_bytes;
     
+    /*for the lost packets*/
     uint64_t max_seq_packet = -1;
     uint64_t total_lost_packets = 0;
+
+    /*for the average jitter calculation and standard deviation*/
+    uint64_t prev_arrival_time_ns = 0;
+    uint64_t prev_inter_arrival_time_ns = 0;
+    uint64_t jitter_sum = 0;
+    uint64_t jitter_count = 0;
+
+    double avg_jitter_ns = 0.0;
+    double jitter_sqr_sum = 0.0;
+    double std_jitter_ns = 0.0;
 
     exp_results_t results;
     
@@ -139,7 +202,7 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int dur
         close(server_sock);
         return -1;    
     }
-
+    
     total_bytes = 0;
     total_packets = 0;
     size_t full_packet_size = packet_size + sizeof(udp_pseudo_header_t);
@@ -182,9 +245,30 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int dur
         if(bytes_recv >= sizeof(udp_pseudo_header_t)) {
             udp_pseudo_header_t header;
             memcpy(&header, buffer, sizeof(header));
+            if(one_way_delay_flag){
+                sendto(server_sock, buffer, bytes_recv, 0, (struct sockaddr *)&client_address, client_addr_len);
+            }else {
+                /*jitter calculation*/
+                uint64_t now = nanosec_now();
+                if(prev_arrival_time_ns != 0){
+                    uint64_t inter_arrival_time_ns = now - prev_arrival_time_ns;
+                    if(prev_inter_arrival_time_ns != 0){
+                        uint64_t jitter_ns = 0;
+                        if(inter_arrival_time_ns > prev_inter_arrival_time_ns){
+                            jitter_ns = inter_arrival_time_ns - prev_inter_arrival_time_ns;
+                        } else {
+                            jitter_ns = prev_inter_arrival_time_ns - inter_arrival_time_ns;
+                        }
+                        jitter_sum += jitter_ns;
+                        jitter_count++;
+                        jitter_sqr_sum += ((double)jitter_ns * (double)jitter_ns);
+                    }
+                    prev_inter_arrival_time_ns = inter_arrival_time_ns;
+                }
+                prev_arrival_time_ns = now;      
+            }
             total_packets++;
             total_bytes += (uint64_t)bytes_recv;
-            received_packet_counter++;
             if(header.sequence_number > max_seq_packet){
                 max_seq_packet = header.sequence_number;
             }
@@ -193,21 +277,35 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int dur
             printf("Received packet too small: %zu bytes\n", bytes_recv);
         }
 
-        if (has_started && nanosec_now() >= time_end_ns) {
+        if(has_started && nanosec_now() >= time_end_ns) {
             break;
         }
     }
-    total_lost_packets = max_seq_packet + 1 - total_packets;
-    results.throughput = calculate_throughput(total_bytes, duration_sec, total_packets);
-    results.goodput = calculate_goodput(total_bytes, duration_sec, total_packets);
     
-    printf("Packets received: %llu\n", total_packets);
-    printf("Bytes received: %llu\n", total_bytes);
-    printf("Throughput: %.3f bps\n", results.throughput);
-    printf("Goodput: %.3f bps\n", results.goodput);
-    printf("Packet loss percent: %.2f%%\n", (total_lost_packets / (double)(total_packets + total_lost_packets)) * 100.0);
+    
+    if(!one_way_delay_flag) {
+        total_lost_packets = max_seq_packet + 1 - total_packets;
+        results.throughput = calculate_throughput(total_bytes, duration_sec, total_packets);
+        results.goodput = calculate_goodput(total_bytes, duration_sec, total_packets);
+        
+        if(jitter_count > 0){
+            avg_jitter_ns = (double)jitter_sum / jitter_count;
 
-    
+            double mean_sqr_jitter = jitter_sqr_sum / jitter_count;
+            double mean = avg_jitter_ns;
+            double variance = mean_sqr_jitter - (mean * mean);
+            if(variance < 0) variance = 0;
+            std_jitter_ns = sqrt(variance);
+        }
+        printf("Packets received: %llu\n", total_packets);
+        printf("Bytes received: %llu\n", total_bytes);
+        printf("Throughput: %.3f bps\n", results.throughput);
+        printf("Goodput: %.3f bps\n", results.goodput);
+        printf("Packet loss percent: %.2f%%\n", (total_lost_packets / (double)(total_packets + total_lost_packets)) * 100.0);
+        printf("Average jitter: %.3f ns\n", avg_jitter_ns);
+        printf("Standard deviation of jitter: %.3f ns\n", std_jitter_ns);
+    }
+
     close(server_sock);
     free(buffer);
     return 0;

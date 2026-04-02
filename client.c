@@ -94,5 +94,5 @@ int run_client(configuration_flags_t *cft) {
     printf("Packet size: %d\n", cft->udp_packet_size_in_bytes);
     printf("Duration: %d sec\n", duration);
 
-    return udp_client_experiment(cft->address, cft->port, (uint32_t)cft->udp_packet_size_in_bytes, duration, cft->bandwidth_in_bits_per_sec);
+    return udp_client_experiment(cft->address, cft->port, (uint32_t)cft->udp_packet_size_in_bytes, duration, cft->bandwidth_in_bits_per_sec, cft->one_way_delay_flag);
 }

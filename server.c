@@ -137,7 +137,8 @@ int run_server(configuration_flags_t *cft) {
     printf("Port: %d\n", cft->port);
     printf("Packet size: %d\n", cft->udp_packet_size_in_bytes);
     printf("Duration: %d sec\n", duration);
+    printf("One way delay flag: %d\n", cft->one_way_delay_flag);
 
-    return udp_server_experiment(cft->address, cft->port, (uint32_t)cft->udp_packet_size_in_bytes, duration);
+    return udp_server_experiment(cft->address, cft->port, (uint32_t)cft->udp_packet_size_in_bytes, cft->one_way_delay_flag , duration);
 }
 
