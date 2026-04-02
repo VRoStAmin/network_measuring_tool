@@ -73,7 +73,7 @@ int recv_start_message(int sock_fd, start_msg_t *start_msg) {
     return 0;
 }
 
-int send_stop_message(int sock_fd, uint32_t last_seq_num) {
+int send_stop_message(int sock_fd, uint64_t last_seq_num) {
     stop_packet_t stop_packet;
     stop_packet.header.signal_type = STOP;
     stop_packet.header.length = sizeof(stop_msg_t);
@@ -103,7 +103,7 @@ int recv_stop_message(int sock_fd, stop_msg_t *stop_msg) {
 int send_exp_exited_message(int sock_fd, exp_exited_msg_t *exp_exited_msg) {
     exp_exited_packet_t exp_exited_packet;
     exp_exited_packet.header.signal_type = EXP_EXITED;
-    exp_exited_packet.header.length = sizeof(exp_exited_msg);
+    exp_exited_packet.header.length = sizeof(exp_exited_msg_t);
     exp_exited_packet.message = *exp_exited_msg;
 
     if(send_all(sock_fd, &exp_exited_packet, sizeof(exp_exited_packet)) < 0) {

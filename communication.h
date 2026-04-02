@@ -22,7 +22,7 @@ typedef struct {
     uint32_t mode; 
 
     uint32_t packet_size; /* Packet size set. */
-    uint32_t bandwidth; /* Bandwidth in bps. */
+    uint64_t bandwidth; /* Bandwidth in bps. */
     uint32_t parallel_num; /* Number of parallel streams. */
     uint32_t duration; /* if 0 it means we have a duration till the user stops it. */
     uint32_t wait_duration; /* Duration in seconds to wait before the experiment starts. */
@@ -35,7 +35,7 @@ typedef struct {
     and it can compute the last packet loss needed.
     (This may get changed later...if the logic is wrong)
     */
-    uint32_t last_seq_sent; 
+    uint62_t last_seq_sent; 
 } stop_msg_t;
 
 /* 
