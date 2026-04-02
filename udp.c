@@ -21,7 +21,21 @@ uint64_t nanosec_now() {
     return (uint64_t)t.tv_sec * 1000000000ULL + (uint64_t)t.tv_nsec;
 }
 
-int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int duration_sec, uint64_t bandwidth_bps, int one_way_delay_flag) {
+void *udp_client_thread_main(void *arg) {
+    udp_client_thread_t *ct = (udp_client_thread_t *)arg;
+    int result = udp_client_experiment(ct->server_ip, ct->port, ct->packet_size, ct->duration_sec, ct->bandwidth_bps, ct->one_way_delay_flag, &ct->last_seq_sent, ct->stop, ct);
+    ct->status = result;
+    return NULL;
+}
+
+void *udp_server_thread_main(void *arg) {
+    udp_server_thread_t *st = (udp_server_thread_t *)arg;
+    int result = udp_server_experiment(st->bind_ip, st->port, st->packet_size, st->one_way_delay_flag, st->duration_sec, st->stop, st);
+    st->status = result;
+    return NULL;
+}
+
+int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int duration_sec, uint64_t bandwidth_bps, int one_way_delay_flag, uint64_t *last_seq_sent, volatile int *stop, udp_client_thread_t *ct) {
     int client_sock;
     char *buffer;
     struct sockaddr_in server_address;
@@ -45,6 +59,7 @@ int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int d
     } 
 
     if(one_way_delay_flag) {
+        ct->one_way_delay_flag = 1;
         udp_pseudo_header_t send_pack;
         udp_pseudo_header_t received_pack;
         seq_num = 0;
@@ -60,7 +75,7 @@ int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int d
         
         double sum_delay_ns = 0;
         uint64_t packets_received = 0;
-        while(nanosec_now() < end_ns) {
+        while(nanosec_now() < end_ns && !*stop) {
             send_pack.sequence_number = seq_num;
             send_pack.time_sent_ns = nanosec_now();
             ssize_t bytes_sent = sendto(client_sock, &send_pack, sizeof(send_pack), 0, (struct sockaddr *)&server_address, sizeof(server_address));
@@ -83,16 +98,21 @@ int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int d
             packets_received++;
             seq_num++;
         }   
-
         if(packets_received > 0) {
             double avg_delay_ns = sum_delay_ns / (double)packets_received;
+            ct->results.one_way_delay = avg_delay_ns;
             printf("Average one way delay: %.3f ns\n", avg_delay_ns);
         } else {
             printf("No packets received to compute one way delay.\n");
         }
+
+        if(seq_num == 0) *last_seq_sent = 0;
+        else *last_seq_sent = seq_num - 1;
+        
         close(client_sock);
         return 0;
     } else {
+        ct->one_way_delay_flag = 0;
         uint64_t full_packet_size = packet_size + sizeof(udp_pseudo_header_t);
         uint64_t overhead_packet_size = full_packet_size + OVERHEAD_SIZE;
 
@@ -113,14 +133,18 @@ int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int d
         //maybe we need to check if the delay_ns is zero due to really small overhead_packet_size
         uint64_t next_send_time = time_now_ns;
 
-        while(nanosec_now() < time_end_ns) {
+        while(nanosec_now() < time_end_ns && !*stop) {
             uint64_t now = nanosec_now();
-            if(now > time_end_ns) {
+            if(now > time_end_ns && !*stop) {
                 break;
             }
 
-            while(nanosec_now() < next_send_time) {
+            while(nanosec_now() < next_send_time && !*stop) {
                 continue;
+            }
+
+            if (*stop) {
+                break;
             }
 
             udp_pseudo_header_t header;
@@ -142,6 +166,9 @@ int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int d
         }
         printf("UDP send test finished, total packets sent: %llu\n", seq_num);
         
+        if(seq_num == 0) *last_seq_sent = 0;
+        else *last_seq_sent = seq_num - 1;
+        
         close(client_sock);
         free(buffer);
         return 0;
@@ -149,7 +176,7 @@ int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int d
     return 0;
 }
 
-int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one_way_delay_flag, int duration_sec) {
+int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one_way_delay_flag, int duration_sec, volatile int *stop, udp_server_thread_t *st) {
     int server_sock;
     struct sockaddr_in client_address;
     struct sockaddr_in server_address;
@@ -225,13 +252,10 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one
     tv.tv_usec = 200000;
     setsockopt(server_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    while(1) {
+    while(!*stop) {
         ssize_t bytes_recv = recvfrom(server_sock, buffer, full_packet_size, 0, (struct sockaddr *)&client_address, &client_addr_len);
 
         if (bytes_recv < 0) {
-            if (has_started && nanosec_now() >= time_end_ns) {
-                break;
-            }
             continue;
         }
         
@@ -276,18 +300,14 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one
         } else {
             printf("Received packet too small: %zu bytes\n", bytes_recv);
         }
-
-        if(has_started && nanosec_now() >= time_end_ns) {
-            break;
-        }
     }
     
     
     if(!one_way_delay_flag) {
         total_lost_packets = max_seq_packet + 1 - total_packets;
-        results.throughput = calculate_throughput(total_bytes, duration_sec, total_packets);
-        results.goodput = calculate_goodput(total_bytes, duration_sec, total_packets);
-        
+        st->results.throughput_bps = calculate_throughput(total_bytes, duration_sec, total_packets);
+        st->results.goodput_bps = calculate_goodput(total_bytes, duration_sec, total_packets);
+
         if(jitter_count > 0){
             avg_jitter_ns = (double)jitter_sum / jitter_count;
 
@@ -299,11 +319,15 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one
         }
         printf("Packets received: %llu\n", total_packets);
         printf("Bytes received: %llu\n", total_bytes);
-        printf("Throughput: %.3f bps\n", results.throughput);
-        printf("Goodput: %.3f bps\n", results.goodput);
+        printf("Throughput: %.3f bps\n", st->results.throughput_bps);
+        printf("Goodput: %.3f bps\n", st->results.goodput_bps);
         printf("Packet loss percent: %.2f%%\n", (total_lost_packets / (double)(total_packets + total_lost_packets)) * 100.0);
         printf("Average jitter: %.3f ns\n", avg_jitter_ns);
         printf("Standard deviation of jitter: %.3f ns\n", std_jitter_ns);
+
+        st->results.loss_percent = (total_lost_packets / (double)(total_packets + total_lost_packets)) * 100.0;
+        st->results.avg_jitter_ns = avg_jitter_ns;
+        st->results.std_jitter = std_jitter_ns;
     }
 
     close(server_sock);

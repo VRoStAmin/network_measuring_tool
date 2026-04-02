@@ -18,9 +18,36 @@ typedef struct {
     
 } exp_results_t;
 
+typedef struct {
+    char *server_ip;
+    int port;
+    uint32_t packet_size;
+    int duration_sec;
+    uint64_t bandwidth_bps;
+    int one_way_delay_flag;
+
+    volatile int *stop;
+    uint64_t final_seq_sent;
+    exp_exited_msg_t results;
+    int status;
+} udp_client_thread_t;
+
+typedef struct {
+    char *bind_ip;
+    int port;
+    uint32_t packet_size;
+    int one_way_delay_flag;
+    int duration_sec;
+
+    volatile int *stop;
+    uint64_t final_seq_recv;
+    exp_exited_msg_t results;
+    int status;
+} udp_server_thread_t;
+
 uint64_t nanosec_now();
-int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int duration_sec, uint64_t bandwidth_bps, int one_way_delay_flag);
-int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one_way_delay_flag, int duration_sec);
+int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int duration_sec, uint64_t bandwidth_bps, int one_way_delay_flag, uint64_t *last_seq_sent, volatile int *stop, udp_client_thread_t *ct);
+int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one_way_delay_flag, int duration_sec, volatile int *stop, udp_server_thread_t *st);
 double calculate_goodput(uint64_t total_bytes, double duration_sec, uint64_t total_packets);
 double calculate_throughput(uint64_t total_bytes, double duration_sec, uint64_t total_packets);
 
