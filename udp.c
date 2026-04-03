@@ -65,7 +65,13 @@ int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int d
         udp_pseudo_header_t send_pack;
         udp_pseudo_header_t received_pack;
         seq_num = 0;
-
+        uint64_t full_packet_size = sizeof(udp_pseudo_header_t);
+        buffer = malloc(full_packet_size * sizeof(char));
+        if(buffer == NULL) {    
+            printf("Malloc failure\n");
+            close(client_sock);
+            return -1;
+        }
         struct timeval tv;
         tv.tv_sec = 0;
         tv.tv_usec = 500000;
@@ -168,7 +174,7 @@ int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int d
         memset(buffer, 0, full_packet_size);
         
         uint64_t time_now_ns = nanosec_now();
-        uint64_t time_end_ns = 0
+        uint64_t time_end_ns = 0;
         double delay_sec = (overhead_packet_size * 8ULL) / (double)bandwidth_bps;
         uint64_t delay_ns = delay_sec * 1000000000ULL;
         //maybe we need to check if the delay_ns is zero due to really small overhead_packet_size
@@ -277,6 +283,13 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one
     server_sock = socket(AF_INET, SOCK_DGRAM, 0);
     if(server_sock < 0) {
         printf("Socket creation failed\n");
+        return -1;
+    }
+
+    int opt = 1;
+    if(setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        printf("setsockopt error\n");
+        close(server_sock);
         return -1;
     }
 
@@ -399,13 +412,13 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one
         }
 
         if(duration > 0){
-            st->results.throughput_bps = calculate_throughput(total_bytes, duration_sec, total_packets);
-            st->results.goodput_bps = calculate_goodput(total_bytes, duration_sec, total_packets);
+            st->results.throughput_bps = calculate_throughput(total_bytes, duration, total_packets);
+            st->results.goodput_bps = calculate_goodput(total_bytes, duration, total_packets);
         }else{
             st->results.throughput_bps = 0.0;
             st->results.goodput_bps = 0.0;
         }
-        
+
         if(jitter_count > 0){
             avg_jitter_ns = (double)jitter_sum / jitter_count;
 

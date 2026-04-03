@@ -100,7 +100,7 @@ int run_client(configuration_flags_t *cft) {
         }
         created_threads++;
     }
-    if(ctf->has_time_parameter){
+    if(cft->has_time_parameter){
         for(int i = 0; i < num_streams; i++){
             pthread_join(threads[i], NULL);
         }
@@ -157,7 +157,7 @@ int run_client(configuration_flags_t *cft) {
     /* We probably need to write these in json files... */
     /* Or make a program to plot them... */
 
-    if(!ctf->one_way_delay_flag){
+    if(!cft->one_way_delay_flag){
         printf("\n");
         printf("RESULTS RECEIVED\n");
         printf("Throughput in bps: %f\n", results.throughput_bps);

@@ -43,6 +43,12 @@ int run_server(configuration_flags_t *cft) {
         return -1;
     }
 
+    int opt = 1;
+    if(setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        printf("setsockopt error\n");
+        close(server_sock);
+        return -1;
+    }
     server_addr.sin_family = AF_INET; /* Matching the family of the server address to the one of the sockets. */
     server_addr.sin_port = htons(cft->port);
     if(cft->address == NULL) {
