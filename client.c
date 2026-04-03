@@ -17,7 +17,6 @@ int run_client(configuration_flags_t *cft) {
     int client_sock;
     struct sockaddr_in server_addr;
     exp_exited_msg_t results;
-    pthread_t udp_thread;
     volatile int stop = 0;
     int duration;
 
@@ -60,61 +59,54 @@ int run_client(configuration_flags_t *cft) {
         sleep(cft->delay_before_starting_in_seconds);
     } 
 
-    if(cft->parallel_num >=1){
-        int num_streams = cft->parallel_num;
-        pthread_t *threads = malloc(num_streams * sizeof(pthread_t));
-        udp_client_thread_t udp_client_thread_args[num_streams];
-        for(int i = 0; i < num_streams; i++){
-            memset(&udp_client_thread_args[i], 0, sizeof(udp_client_thread_t));
-            udp_client_thread_args[i].server_ip = cft->address;
-            udp_client_thread_args[i].port = cft->port;
-            udp_client_thread_args[i].packet_size = (uint32_t)cft->udp_packet_size_in_bytes;
-            udp_client_thread_args[i].duration_sec = duration;
-            udp_client_thread_args[i].bandwidth_bps = cft->bandwidth_in_bits_per_sec / num_streams;
-            udp_client_thread_args[i].one_way_delay_flag = cft->one_way_delay_flag;
-            udp_client_thread_args[i].stop = &stop;
-            udp_client_thread_args[i].last_seq_sent = 0;
-            udp_client_thread_args[i].status = -1;
+    int num_streams = cft->parallel_num;
+    pthread_t *threads = malloc(num_streams * sizeof(pthread_t));
+    udp_client_thread_t udp_client_thread_args[num_streams];
 
-            if(pthread_create(&threads[i], NULL, udp_client_thread_main, &udp_client_thread_args[i]) != 0) {
-                printf("Thread create failed on client\n");
-                close(client_sock);
-                return -1;
+    int created_threads = 0;
+    for(int i = 0; i < num_streams; i++){
+        memset(&udp_client_thread_args[i], 0, sizeof(udp_client_thread_t));
+        udp_client_thread_args[i].server_ip = cft->address;
+        udp_client_thread_args[i].port = cft->port + 1 + i;
+        
+        udp_client_thread_args[i].packet_size = cft->udp_packet_size_in_bytes;
+        udp_client_thread_args[i].duration_sec = duration;
+        udp_client_thread_args[i].bandwidth_bps = cft->bandwidth_in_bits_per_sec / num_streams;
+        udp_client_thread_args[i].one_way_delay_flag = cft->one_way_delay_flag;
+        udp_client_thread_args[i].stop = &stop;
+        udp_client_thread_args[i].last_seq_sent = 0;
+        udp_client_thread_args[i].status = -1;
+
+        if(pthread_create(&threads[i], NULL, udp_client_thread_main, &udp_client_thread_args[i]) != 0) {
+            printf("Thread create failed on client\n");
+            stop = 1;
+            for(int j = 0; j < created_threads; j++) {
+                pthread_join(threads[j], NULL);
             }
+
+            free(threads);
+            close(client_sock);
+            return -1;
         }
-        for(int i = 0; i < num_streams; i++){
-            pthread_join(threads[i], NULL);
+        created_threads++;
+    }
+
+    for(int i = 0; i < num_streams; i++){
+        pthread_join(threads[i], NULL);
+    }
+
+    for(int i = 0; i < num_streams; i++) {
+        if(udp_client_thread_args[i].status != 0) {
+            printf("UDP client thread %d failed\n", i);
+            free(threads);
+            close(client_sock);
+            return -1;
         }
     }
 
-    /*udp_client_thread_t udp_client_thread_args; 
-    memset(&udp_client_thread_args, 0, sizeof(udp_client_thread_t));
-    udp_client_thread_args.server_ip = cft->address;
-    udp_client_thread_args.port = cft->port;
-    udp_client_thread_args.packet_size = (uint32_t)cft->udp_packet_size_in_bytes;
-    udp_client_thread_args.duration_sec = duration;
-    udp_client_thread_args.bandwidth_bps = cft->bandwidth_in_bits_per_sec;
-    udp_client_thread_args.one_way_delay_flag = cft->one_way_delay_flag;
-    udp_client_thread_args.stop = &stop;
-    udp_client_thread_args.last_seq_sent = 0;
-    udp_client_thread_args.status = -1;
-
-    if(pthread_create(&udp_thread, NULL, udp_client_thread_main, &udp_client_thread_args) != 0) {
-        printf("Thread create failed on client\n");
-        close(client_sock);
-        return -1;
-    }
-
-    pthread_join(udp_thread, NULL);*/
-
-    if (udp_client_thread_args.status != 0) {
-        printf("UDP client thread failed\n");
-        close(client_sock);
-        return -1;
-    }
-
-    if(send_stop_message(client_sock, udp_client_thread_args.last_seq_sent) != 0) {
+    if(send_stop_message(client_sock, udp_client_thread_args[0].last_seq_sent) != 0) {
         printf("Send STOP message error\n");
+        free(threads);
         close(client_sock);
         return -1;
     }
@@ -122,6 +114,7 @@ int run_client(configuration_flags_t *cft) {
     
     if(recv_exp_exited_message(client_sock, &results) != 0) {
         printf("Receive EXP_EXITED message error\n");
+        free(threads);
         close(client_sock);
         return -1;
     }
@@ -142,6 +135,7 @@ int run_client(configuration_flags_t *cft) {
     printf("EVERYTHING SUCCESSFUL ON CLIENT SIDE.\n");
     printf("____________________________________________________________________\n");
 
+    free(threads);
     close(client_sock);
     return 0;
 }
