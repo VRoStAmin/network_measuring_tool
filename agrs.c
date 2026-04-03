@@ -191,7 +191,7 @@ void print_configuration(configuration_flags_t *cft) {
 
         printf("Parallel stream number: %d\n", cft->parallel_num);
         printf("UDP packet size: %d bytes\n", cft->udp_packet_size_in_bytes);
-        printf("Bandwidth: %d bps\n", cft->bandwidth_in_bits_per_sec);
+        printf("Bandwidth: %llu bps\n", cft->bandwidth_in_bits_per_sec);
         
         if(cft->has_time_parameter) {
             printf("Duration: %d sec\n", cft->time_to_send_in_seconds);

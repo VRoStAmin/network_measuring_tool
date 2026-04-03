@@ -27,7 +27,7 @@ typedef struct {
     int one_way_delay_flag;
 
     volatile int *stop;
-    uint64_t final_seq_sent;
+    uint64_t last_seq_sent;
     exp_exited_msg_t results;
     int status;
 } udp_client_thread_t;
@@ -50,6 +50,8 @@ int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int d
 int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one_way_delay_flag, int duration_sec, volatile int *stop, udp_server_thread_t *st);
 double calculate_goodput(uint64_t total_bytes, double duration_sec, uint64_t total_packets);
 double calculate_throughput(uint64_t total_bytes, double duration_sec, uint64_t total_packets);
+void *udp_client_thread_main(void *arg);
+void *udp_server_thread_main(void *arg);
 
 
 #endif

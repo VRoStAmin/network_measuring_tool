@@ -7,6 +7,7 @@
 #define START 1
 #define STOP 2
 #define EXP_EXITED 3
+#define PARALLEL_STREAMS_NUM 64
 
 /* Basic header that will have the type of the message, and the length of it. */
 typedef struct {
@@ -35,8 +36,7 @@ typedef struct {
     and it can compute the last packet loss needed.
     (This may get changed later...if the logic is wrong)
     */
-    uint32_t parallel_num;
-    uint62_t *last_seq_sent; 
+    uint32_t parallel_num; 
 } stop_msg_t;
 
 /* 
@@ -57,11 +57,6 @@ typedef struct {
     tcp_header_t header;
     start_msg_t message;
 } start_packet_t;
-
-typedef struct {
-    tcp_header_t header;
-    stop_msg_t message;
-} stop_packet_t;
 
 typedef struct {
     tcp_header_t header;

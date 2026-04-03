@@ -73,30 +73,69 @@ int recv_start_message(int sock_fd, start_msg_t *start_msg) {
     return 0;
 }
 
-int send_stop_message(int sock_fd, uint64_t last_seq_num) {
-    stop_packet_t stop_packet;
-    stop_packet.header.signal_type = STOP;
-    stop_packet.header.length = sizeof(stop_msg_t);
-    stop_packet.message.last_seq_sent = last_seq_num;
-    
-    if(send_all(sock_fd, &stop_packet, sizeof(stop_packet)) < 0) {
+int send_stop_message(int sock_fd, uint32_t parallel_num, uint64_t *last_seq_sent) {
+    tcp_header_t header;
+    stop_msg_t stop_msg;
+
+    header.signal_type = STOP;
+    header.length = sizeof(stop_msg_t) + parallel_num * sizeof(uint64_t);
+
+    stop_msg.parallel_num = parallel_num;
+
+    if (send_all(sock_fd, &header, sizeof(header)) < 0) {
         return -1;
     }
+
+    if (send_all(sock_fd, &stop_msg, sizeof(stop_msg)) < 0) {
+        return -1;
+    }
+
+    if (parallel_num > 0) {
+        if (send_all(sock_fd, last_seq_sent, parallel_num * sizeof(uint64_t)) < 0) {
+            return -1;
+        }
+    }
+
     return 0;
 }
 
-int recv_stop_message(int sock_fd, stop_msg_t *stop_msg) {
-    stop_packet_t stop_packet;
-    if(recv_all(sock_fd, &stop_packet, sizeof(stop_packet)) < 0) {
+int recv_stop_message(int sock_fd, stop_msg_t *stop_msg, uint64_t **last_seq_sent) {
+    tcp_header_t header;
+
+    if (recv_all(sock_fd, &header, sizeof(header)) < 0) {
         return -1;
     }
 
-    if(stop_packet.header.signal_type != STOP) {
-        printf("Expected STOP message, got: %u\n", stop_packet.header.signal_type);
-        return -1; 
+    if (header.signal_type != STOP) {
+        printf("Expected STOP message, got: %u\n", header.signal_type);
+        return -1;
     }
 
-    *stop_msg = stop_packet.message;
+    if (recv_all(sock_fd, stop_msg, sizeof(*stop_msg)) < 0) {
+        return -1;
+    }
+
+    if (header.length != sizeof(stop_msg_t) + stop_msg->parallel_num * sizeof(uint64_t)) {
+        printf("Invalid STOP message length\n");
+        return -1;
+    }
+
+    *last_seq_sent = NULL;
+
+    if (stop_msg->parallel_num > 0) {
+        *last_seq_sent = malloc(stop_msg->parallel_num * sizeof(uint64_t));
+        if (*last_seq_sent == NULL) {
+            printf("Malloc failed receiving STOP payload\n");
+            return -1;
+        }
+
+        if (recv_all(sock_fd, *last_seq_sent, stop_msg->parallel_num * sizeof(uint64_t)) < 0) {
+            free(*last_seq_sent);
+            *last_seq_sent = NULL;
+            return -1;
+        }
+    }
+
     return 0;
 }
 

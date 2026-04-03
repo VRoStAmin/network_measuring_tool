@@ -104,20 +104,26 @@ int run_client(configuration_flags_t *cft) {
         }
     }
 
-    stop_msg_t stop_msg;
-    memset(&stop_msg, 0, sizeof(stop_msg));
-    stop_msg.parallel_streams = num_streams;
-
-    for(int i = 0; i < num_streams; i++){
-        stop_msg.last_seq_sent[i] = udp_client_thread_args[i].last_seq_sent;
-    }
-
-    if (send_stop_message(client_sock, &stop_msg) != 0) {
-        printf("Send STOP message error\n");
+    uint64_t *last_seq_sent = malloc(num_streams * sizeof(uint64_t));
+    if (last_seq_sent == NULL) {
         free(threads);
         close(client_sock);
         return -1;
     }
+
+    for (int i = 0; i < num_streams; i++) {
+        last_seq_sent[i] = udp_client_thread_args[i].last_seq_sent;
+    }
+
+    if (send_stop_message(client_sock, (uint32_t)num_streams, last_seq_sent) != 0) {
+        printf("Send STOP message error\n");
+        free(last_seq_sent);
+        free(threads);
+        close(client_sock);
+        return -1;
+    }
+
+    free(last_seq_sent);
     
     printf("STOP message sent\n");
     
