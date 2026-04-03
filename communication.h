@@ -35,7 +35,8 @@ typedef struct {
     and it can compute the last packet loss needed.
     (This may get changed later...if the logic is wrong)
     */
-    uint62_t last_seq_sent; 
+    uint32_t parallel_num;
+    uint62_t *last_seq_sent; 
 } stop_msg_t;
 
 /* 

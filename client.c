@@ -104,12 +104,21 @@ int run_client(configuration_flags_t *cft) {
         }
     }
 
-    if(send_stop_message(client_sock, udp_client_thread_args[0].last_seq_sent) != 0) {
+    stop_msg_t stop_msg;
+    memset(&stop_msg, 0, sizeof(stop_msg));
+    stop_msg.parallel_streams = num_streams;
+
+    for(int i = 0; i < num_streams; i++){
+        stop_msg.last_seq_sent[i] = udp_client_thread_args[i].last_seq_sent;
+    }
+
+    if (send_stop_message(client_sock, &stop_msg) != 0) {
         printf("Send STOP message error\n");
         free(threads);
         close(client_sock);
         return -1;
     }
+    
     printf("STOP message sent\n");
     
     if(recv_exp_exited_message(client_sock, &results) != 0) {
@@ -129,6 +138,7 @@ int run_client(configuration_flags_t *cft) {
     printf("Loss percent: %f\n", results.loss_percent);
     printf("Avg_jitter: %f\n", results.avg_jitter_ns);
     printf("Std_jitter: %f\n", results.std_jitter);
+    printf("One way delay: %f\n", results.one_way_delay);
     printf("\n");
 
     printf("____________________________________________________________________\n");

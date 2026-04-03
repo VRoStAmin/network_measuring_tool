@@ -94,58 +94,96 @@ int run_server(configuration_flags_t *cft) {
     printf("Wait duration: %u\n", start_msg.wait_duration);
     printf("\n");
 
-    udp_server_thread_t udp_server_thread_args;
-    memset(&udp_server_thread_args, 0, sizeof(udp_server_thread_t));
-    udp_server_thread_args.bind_ip = cft->address;
-    udp_server_thread_args.port = cft->port;
-    udp_server_thread_args.packet_size = start_msg.packet_size;
-    udp_server_thread_args.one_way_delay_flag = start_msg.mode;
-    if(start_msg.duration) {
-        udp_server_thread_args.duration_sec = start_msg.duration;
-    } else {
-        udp_server_thread_args.duration_sec = 5;
-    }
-    udp_server_thread_args.stop = &stop;
-    udp_server_thread_args.final_seq_recv = 0;
-    udp_server_thread_args.status = -1;
+    int num_streams = start_msg.parallel_num;
+    pthread_t *threads = malloc(num_streams * sizeof(pthread_t));
+    udp_server_thread_t *udp_server_thread_args = malloc(num_streams * sizeof(udp_server_thread_t));
 
-    if (pthread_create(&udp_thread, NULL, udp_server_thread_main, &udp_server_thread_args) != 0) {
-        printf("pthread_create failed on server\n");
-        close(client_sock);
-        close(server_sock);
-        return -1;
+    int created_threads = 0;
+    for(int i = 0; i < num_streams; i++) {
+        memset(&udp_server_thread_args[i], 0, sizeof(udp_server_thread_t));
+
+        udp_server_thread_args[i].bind_ip = cft->address;
+        udp_server_thread_args[i].port = cft->port + 1 + i;
+        udp_server_thread_args[i].packet_size = start_msg.packet_size;
+        udp_server_thread_args[i].one_way_delay_flag = start_msg.mode;
+        if(start_msg.duration) {
+            udp_server_thread_args[i].duration_sec = start_msg.duration;
+        } else {
+           udp_server_thread_args[i].duration_sec = 5;   
+        }
+        udp_server_thread_args[i].stop = &stop;
+        udp_server_thread_args[i].final_seq_recv = 0;
+        udp_server_thread_args[i].status = -1;
+        if(pthread_create(&threads[i], NULL, udp_server_thread_main, &udp_server_thread_args[i]) != 0) {
+            printf("Failed in pthread create %d\n", i);
+            stop = 1;
+            for(int j = 0; j < created_threads; j++) {
+                pthread_join(threads[j], NULL);
+            }
+
+            free(threads);
+            free(udp_server_thread_args);
+            close(client_sock);
+            close(server_sock);
+            return -1;
+        }          
+        created_threads++;
     }
 
     if(recv_stop_message(client_sock, &stop_msg) != 0) {
         printf("Receive STOP message error\n");
         stop = 1;
-        pthread_join(udp_thread, NULL);
+        for(int i = 0; i < created_threads; i++) {
+            pthread_join(threads[i], NULL);
+        }
+
+        free(threads);
+        free(udp_server_thread_args);
         close(client_sock);
         close(server_sock);
         return -1;
     }
+
     printf("Received STOP message\n");
-    printf("Last sequence number: %llu\n", stop_msg.last_seq_sent);
-    udp_server_thread_args.final_seq_recv = stop_msg.last_seq_sent;
-    stop = 1;
-
-    pthread_join(udp_thread, NULL);
-    if (udp_server_thread_args.status != 0) {
-        printf("UDP server thread failed\n");
-        close(client_sock);
-        close(server_sock);
-        return -1;
+    for(int i = 0; i < stop_msg.parallel_num; i++) {
+        printf("Last sequence number stream %d: %llu\n", i, stop_msg.last_seq_sent[i]);
+        udp_server_thread_args[i].final_seq_recv = stop_msg.last_seq_sent[i];
     }
 
-    exp_exited_msg.throughput_bps = udp_server_thread_args.results.throughput_bps;
-    exp_exited_msg.goodput_bps = udp_server_thread_args.results.goodput_bps;
-    exp_exited_msg.loss_percent = udp_server_thread_args.results.loss_percent;
-    exp_exited_msg.avg_jitter_ns = udp_server_thread_args.results.avg_jitter_ns;
-    exp_exited_msg.std_jitter = udp_server_thread_args.results.std_jitter;
-    exp_exited_msg.one_way_delay = udp_server_thread_args.results.one_way_delay;
+    stop = 1;
+    for(int i = 0; i < num_streams; i++) {
+        pthread_join(threads[i], NULL);
+        if(udp_server_thread_args[i].status != 0) {
+            printf("UDP server thread %d failed\n", i);
+            free(threads);
+            free(udp_server_thread_args);
+            close(client_sock);
+            close(server_sock);
+            return -1;
+        }
+    }
+    memset(&exp_exited_msg, 0, sizeof(exp_exited_msg));
+
+    for(int = 0; i < num_streams; i++){
+        exp_exited_msg.throughput_bps += udp_server_thread_args[i].results.throughput_bps;
+        exp_exited_msg.goodput_bps += udp_server_thread_args[i].results.goodput_bps;
+        exp_exited_msg.loss_percent += udp_server_thread_args[i].results.loss_percent;
+        exp_exited_msg.avg_jitter_ns += udp_server_thread_args[i].results.avg_jitter_ns;
+        exp_exited_msg.std_jitter += udp_server_thread_args[i].results.std_jitter;
+        exp_exited_msg.one_way_delay += udp_server_thread_args[i].results.one_way_delay;
+    }
+    
+    if (num_streams > 0) {
+        exp_exited_msg.loss_percent /= num_streams;
+        exp_exited_msg.avg_jitter_ns /= num_streams;
+        exp_exited_msg.std_jitter /= num_streams;
+        exp_exited_msg.one_way_delay /= num_streams;
+    }
 
     if(send_exp_exited_message(client_sock, &exp_exited_msg) != 0) {
         printf("Send EXP_EXITED message error\n");
+        free(threads);
+        free(udp_server_thread_args);
         close(client_sock);
         close(server_sock);
         return -1;
@@ -156,6 +194,8 @@ int run_server(configuration_flags_t *cft) {
     printf("EVERYTHING SUCCESSFUL ON SERVER SIDE.\n");
     printf("____________________________________________________________________\n");
     
+    free(threads);
+    free(udp_server_thread_args);
     close(client_sock);
     close(server_sock);
     return 0;
