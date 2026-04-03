@@ -7,11 +7,18 @@
 #include <arpa/inet.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <signal.h>
 
 #include "client.h"
 #include "communication.h"
 #include "tcp.h"
 #include "udp.h"
+
+static volatile sig_atomic_t stop_signal_received = 0;
+
+static void handle_sigint(int sig) {
+    stop_signal_received = 1;
+}
 
 int run_client(configuration_flags_t *cft) {
     int client_sock;
@@ -20,10 +27,13 @@ int run_client(configuration_flags_t *cft) {
     volatile int stop = 0;
     int duration;
 
+    signal(SIGINT, handle_sigint);
+    signal(SIGTERM, handle_sigint);
+
     if(cft->has_time_parameter) {
         duration = cft->time_to_send_in_seconds;
     } else {
-        duration = 5;
+        duration = 0; /* 0 means run until termination by user. */
     }
     
     memset(&server_addr, 0, sizeof(server_addr));
@@ -90,9 +100,18 @@ int run_client(configuration_flags_t *cft) {
         }
         created_threads++;
     }
-
-    for(int i = 0; i < num_streams; i++){
-        pthread_join(threads[i], NULL);
+    if(ctf->has_time_parameter){
+        for(int i = 0; i < num_streams; i++){
+            pthread_join(threads[i], NULL);
+        }
+    }else{
+        while(!stop_signal_received) {
+            sleep(1);
+        }
+        stop = 1;
+        for(int i = 0; i < num_streams; i++){
+            pthread_join(threads[i], NULL);
+        }
     }
 
     for(int i = 0; i < num_streams; i++) {
@@ -137,13 +156,17 @@ int run_client(configuration_flags_t *cft) {
     /* Make flag for one way delay results... */
     /* We probably need to write these in json files... */
     /* Or make a program to plot them... */
-    printf("\n");
-    printf("RESULTS RECEIVED\n");
-    printf("Throughput in bps: %f\n", results.throughput_bps);
-    printf("Goodput in bps: %f\n", results.goodput_bps);
-    printf("Loss percent: %f\n", results.loss_percent);
-    printf("Avg_jitter: %f\n", results.avg_jitter_ns);
-    printf("Std_jitter: %f\n", results.std_jitter);
+
+    if(!ctf->one_way_delay_flag){
+        printf("\n");
+        printf("RESULTS RECEIVED\n");
+        printf("Throughput in bps: %f\n", results.throughput_bps);
+        printf("Goodput in bps: %f\n", results.goodput_bps);
+        printf("Loss percent: %f\n", results.loss_percent);
+        printf("Avg_jitter: %f\n", results.avg_jitter_ns);
+        printf("Std_jitter: %f\n", results.std_jitter);
+    }
+    
     printf("One way delay: %f\n", results.one_way_delay);
     printf("\n");
 

@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <time.h>
 #include <math.h>
+#include <sys/time.h>
 
 #include "udp.h"
 
@@ -71,34 +72,73 @@ int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int d
         setsockopt(client_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
         uint64_t start_ns = nanosec_now();
-        uint64_t end_ns = start_ns + (uint64_t)duration_sec * 1000000000ULL;
+        
         printf("UDP delay mode client started for %d seconds\n", duration_sec);
         
         double sum_delay_ns = 0;
         uint64_t packets_received = 0;
-        while(nanosec_now() < end_ns && !*stop) {
-            send_pack.sequence_number = seq_num;
-            send_pack.time_sent_ns = nanosec_now();
-            ssize_t bytes_sent = sendto(client_sock, &send_pack, sizeof(send_pack), 0, (struct sockaddr *)&server_address, sizeof(server_address));
-            if(bytes_sent < 0) {
-                printf("Error in send to\n");
-                close(client_sock);
-                return -1; 
+        if(duration_sec > 0){
+            uint64_t end_ns = start_ns + (uint64_t)duration_sec * 1000000000ULL;
+            while(nanosec_now() < end_ns && !*stop) {
+                send_pack.sequence_number = seq_num;
+                send_pack.time_sent_ns = nanosec_now();
+                ssize_t bytes_sent = sendto(client_sock, &send_pack, sizeof(send_pack), 0, (struct sockaddr *)&server_address, sizeof(server_address));
+                if(bytes_sent < 0) {
+                    printf("Error in send to\n");
+                    close(client_sock);
+                    return -1; 
+                } 
+
+                ssize_t bytes_recv = recvfrom(client_sock, &received_pack, sizeof(received_pack), 0, NULL, NULL);
+                if(bytes_recv < 0) {
+                    seq_num++;
+                    continue;
+                }
+
+                uint64_t recv_time_ns = nanosec_now();
+                uint64_t rtt_ns = recv_time_ns - received_pack.time_sent_ns;
+                double one_way_delay_ns = rtt_ns/2.0;
+                sum_delay_ns += one_way_delay_ns;
+                packets_received++;
+                seq_num++;
             } 
 
-            ssize_t bytes_recv = recvfrom(client_sock, &received_pack, sizeof(received_pack), 0, NULL, NULL);
-            if(bytes_recv < 0) {
-                seq_num++;
-                continue;
-            }
+        }else{
+            while(!*stop) {
+                udp_pseudo_header_t header;
+                header.sequence_number = seq_num;
+                header.time_sent_ns = nanosec_now();
 
-            uint64_t recv_time_ns = nanosec_now();
-            uint64_t rtt_ns = recv_time_ns - received_pack.time_sent_ns;
-            double one_way_delay_ns = rtt_ns/2.0;
-            sum_delay_ns += one_way_delay_ns;
-            packets_received++;
-            seq_num++;
-        }   
+                memcpy(buffer, &header, sizeof(header));
+
+                ssize_t bytes_sent = sendto(client_sock, buffer, full_packet_size, 0, (struct sockaddr *)&server_address, sizeof(server_address));
+                if(bytes_sent < 0) {
+                    perror("sendto"); 
+                    close(client_sock);
+                    free(buffer);
+                    return -1;
+                }
+
+                ssize_t bytes_recv = recvfrom(client_sock, buffer, full_packet_size, 0, NULL, NULL);
+                if(bytes_recv < 0) {
+                    perror("recvfrom"); 
+                    close(client_sock);
+                    free(buffer);
+                    return -1;
+                }
+
+                udp_pseudo_header_t received_pack;
+                memcpy(&received_pack, buffer, sizeof(received_pack));
+
+                uint64_t time_now_ns = nanosec_now();
+                double rtt_ns = (double)(time_now_ns - received_pack.time_sent_ns);
+                double one_way_delay_ns = rtt_ns / 2.0;
+                sum_delay_ns += one_way_delay_ns;
+                packets_received++;
+                seq_num++;
+            }
+        }
+          
         if(packets_received > 0) {
             double avg_delay_ns = sum_delay_ns / (double)packets_received;
             ct->results.one_way_delay = avg_delay_ns;
@@ -128,43 +168,73 @@ int udp_client_experiment(char *server_ip, int port, uint32_t packet_size, int d
         memset(buffer, 0, full_packet_size);
         
         uint64_t time_now_ns = nanosec_now();
-        uint64_t time_end_ns = time_now_ns + (uint64_t)duration_sec * 1000000000ULL;
+        uint64_t time_end_ns = 0
         double delay_sec = (overhead_packet_size * 8ULL) / (double)bandwidth_bps;
         uint64_t delay_ns = delay_sec * 1000000000ULL;
         //maybe we need to check if the delay_ns is zero due to really small overhead_packet_size
         uint64_t next_send_time = time_now_ns;
+        if(duration_sec > 0){
+            time_end_ns = time_now_ns + (uint64_t)duration_sec * 1000000000ULL;
+            while(nanosec_now() < time_end_ns && !*stop) {
+                uint64_t now = nanosec_now();
+                if(now > time_end_ns && !*stop) {
+                    break;
+                }
 
-        while(nanosec_now() < time_end_ns && !*stop) {
-            uint64_t now = nanosec_now();
-            if(now > time_end_ns && !*stop) {
-                break;
+                while(nanosec_now() < next_send_time && !*stop) {
+                    continue;
+                }
+
+                if (*stop) {
+                    break;
+                }
+
+                udp_pseudo_header_t header;
+                header.sequence_number = seq_num;
+                header.time_sent_ns = nanosec_now();
+                
+
+                memcpy(buffer, &header, sizeof(header));
+                ssize_t bytes_sent = sendto(client_sock, buffer, full_packet_size, 0, (struct sockaddr *)&server_address, sizeof(server_address));
+                if(bytes_sent < 0) {
+                    printf("Error in send to\n");
+                    close(client_sock);
+                    free(buffer);
+                    return -1; 
+                }
+                printf("Sent UDP packet with sequence number: %llu\n", seq_num);
+                seq_num++;
+                next_send_time += delay_ns;
             }
+        }else {
+            while(!*stop) {
+                while(nanosec_now() < next_send_time && !*stop) {
+                    continue;
+                }
 
-            while(nanosec_now() < next_send_time && !*stop) {
-                continue;
+                if (*stop) {
+                    break;
+                }
+
+                udp_pseudo_header_t header;
+                header.sequence_number = seq_num;
+                header.time_sent_ns = nanosec_now();
+                
+                memcpy(buffer, &header, sizeof(header));
+                ssize_t bytes_sent = sendto(client_sock, buffer, full_packet_size, 0, (struct sockaddr *)&server_address, sizeof(server_address));
+                if(bytes_sent < 0) {
+                    perror("sendto"); 
+                    close(client_sock);
+                    free(buffer);
+                    return -1; 
+                }
+
+                printf("Sent UDP packet with sequence number: %llu\n", seq_num);
+                seq_num++;
+                next_send_time += delay_ns;
             }
-
-            if (*stop) {
-                break;
-            }
-
-            udp_pseudo_header_t header;
-            header.sequence_number = seq_num;
-            header.time_sent_ns = nanosec_now();
-            
-
-            memcpy(buffer, &header, sizeof(header));
-            ssize_t bytes_sent = sendto(client_sock, buffer, full_packet_size, 0, (struct sockaddr *)&server_address, sizeof(server_address));
-            if(bytes_sent < 0) {
-                printf("Error in send to\n");
-                close(client_sock);
-                free(buffer);
-                return -1; 
-            }
-            printf("Sent UDP packet with sequence number: %llu\n", seq_num);
-            seq_num++;
-            next_send_time += delay_ns;
         }
+        
         printf("UDP send test finished, total packets sent: %llu\n", seq_num);
         
         if(seq_num == 0) *last_seq_sent = 0;
@@ -188,7 +258,8 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one
     uint64_t total_bytes;
     
     /*for the lost packets*/
-    uint64_t max_seq_packet = -1;
+    uint64_t max_seq_packet = 0;
+    int has_received_packet = 0;
     uint64_t total_lost_packets = 0;
 
     /*for the average jitter calculation and standard deviation*/
@@ -244,6 +315,9 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one
     memset(buffer, 0, (packet_size + 1024) * sizeof(char));
     printf("Server listening on port %d\n", port);
 
+    uint64_t first_packet_time_ns = 0;
+    uint64_t end_measurement_time_ns = 0;
+
     int has_started = 0;
     uint64_t time_end_ns = 0;
     uint64_t time_now_ns = 0;
@@ -258,6 +332,10 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one
 
         if (bytes_recv < 0) {
             continue;
+        }
+
+        if(first_packet_time_ns == 0) {
+            first_packet_time_ns = nanosec_now();
         }
         
         if(!has_started) {
@@ -294,21 +372,40 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one
             }
             total_packets++;
             total_bytes += (uint64_t)bytes_recv;
-            if(header.sequence_number > max_seq_packet){
+            if(header.sequence_number > max_seq_packet || !has_received_packet) {
                 max_seq_packet = header.sequence_number;
+                has_received_packet = 1;
             }
             //printf("Received packet seq=%llu\n", header.sequence_number);
         } else {
             printf("Received packet too small: %zu bytes\n", bytes_recv);
         }
     }
-    
+    end_measurement_time_ns = nanosec_now();
     
     if(!one_way_delay_flag) {
-        total_lost_packets = max_seq_packet + 1 - total_packets;
-        st->results.throughput_bps = calculate_throughput(total_bytes, duration_sec, total_packets);
-        st->results.goodput_bps = calculate_goodput(total_bytes, duration_sec, total_packets);
+        double duration = 0.0;
 
+        if(duration_sec > 0) {
+            duration = duration_sec;
+        } else {
+            duration = (double)(end_measurement_time_ns - first_packet_time_ns) / 1000000000.0;
+        }
+
+        if(has_received_packet && max_seq_packet + 1 >= total_packets) {
+            total_lost_packets = max_seq_packet + 1 - total_packets;
+        }else{
+            total_lost_packets = 0;
+        }
+
+        if(duration > 0){
+            st->results.throughput_bps = calculate_throughput(total_bytes, duration_sec, total_packets);
+            st->results.goodput_bps = calculate_goodput(total_bytes, duration_sec, total_packets);
+        }else{
+            st->results.throughput_bps = 0.0;
+            st->results.goodput_bps = 0.0;
+        }
+        
         if(jitter_count > 0){
             avg_jitter_ns = (double)jitter_sum / jitter_count;
 
@@ -326,6 +423,8 @@ int udp_server_experiment(char *bind_ip, int port, uint32_t packet_size, int one
         printf("Average jitter: %.3f ns\n", avg_jitter_ns);
         printf("Standard deviation of jitter: %.3f ns\n", std_jitter_ns);
 
+        st->packets_received = total_packets;
+        st->bytes_received = total_bytes;
         st->results.loss_percent = (total_lost_packets / (double)(total_packets + total_lost_packets)) * 100.0;
         st->results.avg_jitter_ns = avg_jitter_ns;
         st->results.std_jitter = std_jitter_ns;

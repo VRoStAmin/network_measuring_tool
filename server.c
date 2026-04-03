@@ -115,11 +115,8 @@ int run_server(configuration_flags_t *cft) {
         udp_server_thread_args[i].port = cft->port + 1 + i;
         udp_server_thread_args[i].packet_size = start_msg.packet_size;
         udp_server_thread_args[i].one_way_delay_flag = start_msg.mode;
-        if(start_msg.duration) {
-            udp_server_thread_args[i].duration_sec = start_msg.duration;
-        } else {
-           udp_server_thread_args[i].duration_sec = 5;   
-        }
+        udp_server_thread_args[i].duration_sec = start_msg.duration;
+        
         udp_server_thread_args[i].stop = &stop;
         udp_server_thread_args[i].final_seq_recv = 0;
         udp_server_thread_args[i].packets_received = 0;
@@ -177,7 +174,7 @@ int run_server(configuration_flags_t *cft) {
     uint64_t total_recv_packets = 0;
 
     for(int i = 0; i < num_streams; i++){
-        uint64_t sent_packets = udp_server_thread_args[i].final_seq_sent + 1;
+        uint64_t sent_packets = udp_server_thread_args[i].final_seq_recv + 1;
         uint64_t recv_packets = udp_server_thread_args[i].packets_received;
         uint64_t lost_packets = 0;
 

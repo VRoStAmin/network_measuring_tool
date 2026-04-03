@@ -38,7 +38,8 @@ typedef struct {
     uint32_t packet_size;
     int one_way_delay_flag;
     int duration_sec;
-
+    uint64_t packets_received;
+    uint64_t bytes_received;
     volatile int *stop;
     uint64_t final_seq_recv;
     exp_exited_msg_t results;
